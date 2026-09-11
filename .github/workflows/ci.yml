@@ -1,0 +1,87 @@
+# =============================================================================
+# Pipeline de Integração Contínua (CI)
+# Projeto: CSharp-Unit-Testing-Tutorial (.NET 9 + xUnit)
+#
+# O QUE É ISSO? Este arquivo descreve, passo a passo, o que o GitHub deve
+# fazer automaticamente toda vez que alguém enviar código novo. Ele fica
+# salvo no caminho .github/workflows/ci.yml dentro do seu repositório
+# (esse caminho de pasta é obrigatório: é onde o GitHub Actions procura
+# por workflows).
+# =============================================================================
+
+# Nome que aparece na aba "Actions" do GitHub, só para identificação.
+name: CI
+
+# -----------------------------------------------------------------------
+# QUANDO o pipeline deve rodar.
+# A atividade pede: disparar em Push e em Pull Request, na branch principal.
+# Troque "main" por "master" aqui embaixo SE o seu fork usar esse nome de
+# branch (confira em github.com/SEU-USUARIO/CSharp-Unit-Testing-Tutorial,
+# o nome aparece no botão de branches, perto do topo da página).
+# -----------------------------------------------------------------------
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+# -----------------------------------------------------------------------
+# O QUE fazer quando o pipeline dispara: um único "job" (tarefa) chamado
+# build-and-test, que roda em uma máquina virtual Linux fornecida de graça
+# pelo GitHub (ubuntu-latest).
+# -----------------------------------------------------------------------
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+
+    steps:
+      # 1) Baixa o código do seu repositório para dentro da máquina virtual.
+      #    Sem esse passo não existiria nenhum arquivo para compilar.
+      - name: Fazer checkout do código
+        uses: actions/checkout@v4
+
+      # 2) Instala o SDK do .NET 9 na máquina virtual. A versão precisa
+      #    bater com a que o projeto usa (net9.0), senão o build falha por
+      #    incompatibilidade de versão do SDK.
+      - name: Instalar o .NET 9 SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '9.0.x'
+
+      # 3) Restaura os pacotes NuGet (xUnit, coverlet, Moq, FluentAssertions
+      #    etc.) que o projeto depende. Equivale ao "dotnet restore" que
+      #    roda automaticamente, mas separar esse passo deixa o log mais
+      #    claro caso algo dê errado só na hora de baixar dependências.
+      - name: Restaurar dependências
+        run: dotnet restore src/UnitTestingTutorial.slnx
+
+      # 4) Compila a solução inteira. Se houver um ERRO DE SINTAXE ou de
+      #    TIPO no código (ex.: um ponto e vírgula faltando, um método que
+      #    não existe), o pipeline já para AQUI, antes mesmo de tentar
+      #    rodar qualquer teste. Isso é uma "falha de build".
+      - name: Compilar (dotnet build)
+        run: dotnet build src/UnitTestingTutorial.slnx --configuration Release --no-restore
+
+      # 5) Roda os 172 testes automatizados do projeto usando o coletor de
+      #    cobertura do coverlet (já referenciado no projeto de testes).
+      #    "XPlat Code Coverage" é o nome do coletor multiplataforma que
+      #    gera o arquivo coverage.cobertura.xml, usado no passo 6.
+      #    Se o build passou mas um Assert.Equal (ou similar) falhar aqui,
+      #    isso é uma "falha de teste" — bem diferente de uma falha de build,
+      #    porque o código COMPILA normalmente, só o COMPORTAMENTO está errado.
+      - name: Rodar os testes com coleta de cobertura
+        run: dotnet test src/UnitTestingTutorial.slnx --configuration Release --no-build --collect:"XPlat Code Coverage"
+
+      # 6) Publica o arquivo de cobertura gerado no passo anterior como um
+      #    "artifact" (artefato) do GitHub Actions. É esse artefato que você
+      #    vai baixar depois (aba Actions > sua execução > seção Artifacts)
+      #    para gerar o relatório HTML local com o reportgenerator.
+      #    O nome do artefato vira o nome do .zip baixado, por isso ele se
+      #    chama "cobertura-cobertura-xml" (gera cobertura-cobertura-xml.zip).
+      - name: Publicar relatório de cobertura como artefato
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cobertura-cobertura-xml
+          path: '**/TestResults/**/coverage.cobertura.xml'
+          retention-days: 30
